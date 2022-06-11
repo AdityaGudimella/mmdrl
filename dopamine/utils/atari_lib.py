@@ -42,7 +42,7 @@ from __future__ import print_function
 
 import collections
 import math
-import numpy as np 
+import numpy as np
 
 import atari_py
 import gin
@@ -217,8 +217,8 @@ def implicit_quantile_network(num_actions, quantile_embedding_dim,
       weights_initializer=weights_initializer)
 
   return network_type(quantile_values=quantile_values, quantiles=quantiles)
-  
-@gin.configurable(blacklist=['variables'])
+
+@gin.configurable(denylist=['variables'])
 def maybe_transform_variable_names(variables, legacy_checkpoint_load=False):
   """Maps old variable names to the new ones.
 
@@ -634,20 +634,18 @@ class NoopAtariPreprocessing(AtariPreprocessing):
   """
   def __init__(self, environment, frame_skip=4, terminal_on_life_loss=False,
                screen_size=84, noop_max=30):
-    self.noop_max=noop_max 
-    self.noop_action = 0 
+    self.noop_max=noop_max
+    self.noop_action = 0
     assert environment.unwrapped.get_action_meanings()[0] == 'NOOP'
     super(NoopAtariPreprocessing, self).__init__(environment,frame_skip,terminal_on_life_loss, screen_size)
-  
+
   def reset(self):
-    """Do no-op action for a number of steps in [1, noop_max]. Noop is assumed to be action 0. 
+    """Do no-op action for a number of steps in [1, noop_max]. Noop is assumed to be action 0.
     """
-    observation = super(NoopAtariPreprocessing,self).reset() 
+    observation = super(NoopAtariPreprocessing,self).reset()
     noops = np.random.randint(1, self.noop_max + 1)
     for _ in range(noops):
       observation, accumulated_reward, is_terminal, info = self.step(self.noop_action)
       if is_terminal:
-        observation = super(NoopAtariPreprocessing, self).reset() 
+        observation = super(NoopAtariPreprocessing, self).reset()
     return observation
-
-

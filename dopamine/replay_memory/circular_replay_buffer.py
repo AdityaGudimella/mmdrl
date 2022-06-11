@@ -188,13 +188,13 @@ class OutOfGraphReplayBuffer(object):
     self._store = {}
     for storage_element in self.get_storage_signature():
       array_shape = [self._replay_capacity] + list(storage_element.shape)
-      #@DEBUG 
+      #@DEBUG
       # try:
       #   array_shape = [self._replay_capacity] + list(storage_element.shape)
       # except AttributeError as errmsg:
       #   print('Heyyy', storage_element)
       #   print('element', storage_element)
-      #   raise errmsg 
+      #   raise errmsg
 
       self._store[storage_element.name] = np.empty(
           array_shape, dtype=storage_element.type)
@@ -695,7 +695,7 @@ class OutOfGraphReplayBuffer(object):
             self.__dict__[attr] = pickle.load(infile)
 
 
-@gin.configurable(blacklist=['observation_shape', 'stack_size',
+@gin.configurable(denylist=['observation_shape', 'stack_size',
                              'update_horizon', 'gamma'])
 class WrappedReplayBuffer(object):
   """Wrapper of OutOfGraphReplayBuffer with an in graph sampling mechanism.
