@@ -1,5 +1,6 @@
 import sys,os 
 import numpy as np 
+import torch
 import tensorflow as tf 
 import tensorflow_probability as tfp 
 import random 
@@ -391,15 +392,22 @@ class ParticlePolicy(object):
         bs = shape[0]
         na = shape[1]
         n = shape[2]
-        indices = tf.range(n)
+        indices = torch.range(0,n, dtype=torch.int32)
+        #tf.range(n)
         logits = [] 
         for i in range(na):
             q1 = particles[:,i,:]
-            i_index = tf.constant(np.array([j for j in range(na) if j != i]))
-            q2 = tf.gather(particles, i_index, axis=1)
-            s = tf.cast(tf.greater_equal(q1[:,None,None,:], q2[:,:,:,None]), dtype=tf.float32)
-            logits.append(tf.reduce_sum(tf.math.reduce_prod(tf.reduce_sum(s, axis=2), axis=1), axis=1))
-        logits = tf.stack(logits, axis=1)
+            i_index = torch.tensor(np.array([j for j in range(10) if j != 4]), dtype=torch.int64)
+            #tf.constant(np.array([j for j in range(na) if j != i]))
+            q2 = torch.gather(particles, 1, i_index)
+            #tf.gather(particles, i_index, axis=1)
+            s = torch.greater_equal(q1[:,None, None, :], q2[:,:,:,None])
+            s = s.type(torch.FloatTensor)
+            #tf.cast(tf.greater_equal(q1[:,None,None,:], q2[:,:,:,None]), dtype=tf.float32)
+            logits.append(torch.sum(torch.prod(torch.sum(s, axis=2), axis=1), axis=1))
+            #logits.append(tf.reduce_sum(tf.math.reduce_prod(tf.reduce_sum(s, axis=2), axis=1), axis=1))
+        logits = torch.stack(logits, axis=1)
+        #tf.stack(logits, axis=1)
         return logits 
     @staticmethod 
     def sample_from_action_probability(action_values):
@@ -410,10 +418,13 @@ class ParticlePolicy(object):
         Returns:
             selected_action: (bs,), one of the actions with maximum value. 
         """
-        action_prob = tf.cast(tf.equal(tf.reduce_max(action_values, axis=1)[:,None], action_values), tf.float32) 
+        action_prob = torch.tensor(torch.equal(torch.max(action_values, axis=1)[:, None], action_values), dtype=torch.float32)
+        #tf.cast(tf.equal(tf.reduce_max(action_values, axis=1)[:,None], action_values), tf.float32) 
         # selected_action = tf.random.categorical(logits=action_prob, num_samples=1)[:,0] # FLAG: logits=[0,1,1] -> 0.16 0.42 0.42 
-        action_prob = action_prob / tf.reduce_sum(action_prob, axis=-1) 
-        selected_action = tfp.distributions.Categorical(probs=action_prob).sample(1)[:,0]
+        action_prob = action_prob / tf.sum(action_prob, axis=-1)
+        # tf.reduce_sum(action_prob, axis=-1) 
+        selected_action = torch.distributions.Categorical(probs=action_prob).sample(1)[:,0]
+        #tfp.distributions.Categorical(probs=action_prob).sample(1)[:,0]
         return selected_action #tf.squeeze(selected_action)
 
     def draw_action(self, particles, policy='mean', head_index=0, random_weights=np.array([1]), beta=None):
