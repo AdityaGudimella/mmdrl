@@ -439,85 +439,12 @@ class ParticlePolicy(object):
             selected_action: (bs,)
         """
         if policy in ['eps_greedy', 'mean']:
-            q_values = tf.reduce_mean(particles, axis=2) 
+            q_values = torch.mean(particles, axis=2)
+            #tf.reduce_mean(particles, axis=2) 
 
             # selected_action = tf.argmax(q_values, axis=1)
             # return selected_action 
             return self.sample_from_action_probability(q_values) 
-
-        elif policy in ['ucb', 'optimistic']:
-            q_mean_values = tf.reduce_mean(particles, axis=2) #(bs,na)
-            if self.quantile_index is None:
-                q_std_values = tf.math.reduce_std(particles, axis=2) #(bs,na)
-                if beta is None:
-                    beta = self.beta 
-                q_values = q_mean_values + beta * q_std_values 
-            else:
-                q_values = q_mean_values + particles[:,:, self.quantile_index]
-            # selected_action = tf.argmax(q_values, axis=1)
-            # return selected_action
-            return self.sample_from_action_probability(q_values)
-        elif policy in ['ucb_max', 'optimistic_max']:
-            q_mean_values = tf.reduce_mean(particles, axis=2) #(bs,na)
-            q_values = q_mean_values + tf.reduce_max(particles, axis=-1)
-            return self.sample_from_action_probability(q_values)
-
-        elif policy in ['ps', 'posterior']:
-            # A head is sampled at each time step, as opposed to bootrapped policy where a head is sampled at each episode. 
-            p_shape = particles.shape.as_list()
-            logits = tf.ones( [p_shape[0] * p_shape[1], p_shape[2]], dtype=tf.float32) 
-            indices = tf.reshape(tf.random.categorical(logits, num_samples=1), [p_shape[0], p_shape[1]]) # (bs,na)
-            mask = tf.one_hot(indices, depth=p_shape[2]) #(bs,na,n) where the last dim is one-hot 
-            q_values = tf.reduce_sum(tf.multiply( particles, mask ), axis=2) 
-            return self.sample_from_action_probability(q_values)
-        elif policy in ['ps2', 'posterior2']:
-            # Equation (3) in B. O'Donoghue et al. "The Uncertainty Bellman Equation and Exploration". 
-            p_shape = particles.shape.as_list()
-            q_mean_values = tf.reduce_mean(particles, axis=2) #(bs,na)
-            q_std_values = tf.math.reduce_std(particles, axis=2) #(bs,na)
-            beta = tf.random.normal((p_shape[0],p_shape[1])) #(bs,na)
-            q_values = q_mean_values + beta * q_std_values 
-            # selected_action = tf.argmax(q_values, axis=1)
-            # return selected_action
-            return self.sample_from_action_probability(q_values)
-        elif policy in ['ps3', 'posterior3']:
-            # Random weight of the heads into a randomized Q-function
-            p_shape = particles.shape.as_list()
-            random_ensemble_weights = tf.random.normal((p_shape[-1],)) #(bs,na)
-            random_ensemble_weights = random_ensemble_weights / tf.reduce_sum(random_ensemble_weights) 
-            q_values = tf.reduce_mean(tf.multiply(particles, random_ensemble_weights[None, None, :]), axis=-1)
-            # selected_action = tf.argmax(q_values, axis=1)
-            # return selected_action
-            return self.sample_from_action_probability(q_values)
-        elif policy == 'boot':
-            # Select a head uniformaly at random at the start of the episode and follow this choice for an entire episode. 
-            # Q: How about in evaluation?
-            q_values = particles[:,:,head_index] #(bs,na)
-            # print('DEBUGGGG')
-            # print(q_values)
-            # selected_action = tf.argmax(q_values, axis=1)
-            # return selected_action
-            return self.sample_from_action_probability(q_values)
-
-        elif policy == 'rem':
-            # Inspired by https://arxiv.org/abs/1907.04543v3, randomly combine the heads into a randomized head. 
-            q_values = tf.reduce_sum(tf.multiply( particles, random_weights[None, None,:] ), axis=-1)
-            return self.sample_from_action_probability(q_values)
-
-        elif policy == 'ensemble':
-            # Choose action based on the majority vote across heads
-            # Q: episode-based or step-based? Seems step-based is more natural. 
-            argmax_ensemble = tf.math.argmax(particles, axis=1) #(bs,n)
-            assert argmax_ensemble.shape.as_list()[0] == 1 
-            argmax_ensemble = tf.squeeze(argmax_ensemble) #(n,)
-            with tf.device('/cpu:0'): # tf.unique_with_counts is not supported in GPU. 
-                y,idx,count = tf.unique_with_counts(argmax_ensemble) 
-                max_count_idx = tf.math.argmax(count) 
-                # print('DEBUGGG')
-                # print(y)
-                # print(max_count_idx)
-                # print(argmax_ensemble)
-                return tf.gather(y, max_count_idx)[None]
         else:
             raise ValueError('Unrecognized policy: {}'.format(policy))
 
@@ -531,47 +458,14 @@ class ParticlePolicy(object):
             action_targets: (bs,n)
         """
         if estimator == 'mean':
-            q_values = tf.reduce_mean(targets, axis=2) #(bs,na)
-            action_prob = tf.cast(tf.equal(tf.reduce_max(q_values, axis=1)[:,None], q_values), tf.float32) #(bs,na)
-            action_prob = tf.div(action_prob, tf.reduce_sum(action_prob, axis=1, keepdims=True))
-            action_targets = tf.reduce_sum(tf.multiply(targets, action_prob[:,:,None]), axis=1)
-            return action_targets 
-        elif estimator == 'optimistic':
-            q_mean_values = tf.reduce_mean(targets, axis=2) #(bs,na)
-            if self.quantile_index is None:
-                q_std_values = tf.math.reduce_std(targets, axis=2) #(bs,na)
-                q_values = q_mean_values + self.beta * q_std_values 
-            else:
-                q_values = q_mean_values + targets[:,:, self.quantile_index]
-            
-            action_prob = tf.cast(tf.equal(tf.reduce_max(q_values, axis=1)[:,None], q_values), tf.float32) #(bs,na)
-            action_prob = tf.div(action_prob, tf.reduce_sum(action_prob, axis=1, keepdims=True))
-            action_targets = tf.reduce_sum(tf.multiply(targets, action_prob[:,:,None]), axis=1)
-            return action_targets  
-        elif estimator == 'optimistic_max':
-            q_mean_values = tf.reduce_mean(targets, axis=2) #(bs,na)
-            q_values = q_mean_values + tf.reduce_max(targets, axis=-1)
-            
-            action_prob = tf.cast(tf.equal(tf.reduce_max(q_values, axis=1)[:,None], q_values), tf.float32) #(bs,na)
-            action_prob = tf.div(action_prob, tf.reduce_sum(action_prob, axis=1, keepdims=True))
-            action_targets = tf.reduce_sum(tf.multiply(targets, action_prob[:,:,None]), axis=1)
-            return action_targets  
-        elif estimator == 'posterior':
-            action_prob = self.compute_thompson_matrix(targets)
-            action_prob = tf.div(action_prob, tf.reduce_sum(action_prob, axis=1, keepdims=True))
-            action_targets = tf.reduce_sum(tf.multiply(targets, action_prob[:,:,None]), axis=1)
-            return action_targets  
-        elif estimator == 'head_wise':
-            action_targets = tf.reduce_max(targets, axis=1)
-            return action_targets
-        elif estimator == 'posterior3':
-            p_shape = targets.shape.as_list()
-            random_ensemble_weights = tf.random.normal((p_shape[-1],)) #(bs,na)
-            random_ensemble_weights = random_ensemble_weights / tf.reduce_sum(random_ensemble_weights) 
-            q_values = tf.reduce_mean(tf.multiply(targets, random_ensemble_weights[None, None, :]), axis=-1)
-            action_prob = tf.cast(tf.equal(tf.reduce_max(q_values, axis=1)[:,None], q_values), tf.float32) #(bs,na)
-            action_prob = tf.div(action_prob, tf.reduce_sum(action_prob, axis=1, keepdims=True))
-            action_targets = tf.reduce_sum(tf.multiply(targets, action_prob[:,:,None]), axis=1)
+            q_values = torch.mean(targets,axis=2)
+            #tf.reduce_mean(targets, axis=2) #(bs,na)
+            action_prob = torch.tensor(torch.equal(torch.max(q_values, axis=1)[:,None], q_values), dtype=torch.float32)
+            #tf.cast(tf.equal(tf.reduce_max(q_values, axis=1)[:,None], q_values), tf.float32) #(bs,na)
+            action_prob = torch.div(action_prob, torch.sum(action_prob, axis=1, keepdim=True))
+            #tf.div(action_prob, tf.reduce_sum(action_prob, axis=1, keepdims=True))
+            action_targets = torch.sum(torch.multiply(targets, action_prob[:,:,None]), axis=1)
+            #tf.reduce_sum(tf.multiply(targets, action_prob[:,:,None]), axis=1)
             return action_targets 
         else:
             raise ValueError('Unrecognized estimator: {}.'.format(estimator))
